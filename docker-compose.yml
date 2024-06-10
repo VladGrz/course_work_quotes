@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: vladgrz/quotes_manager_db
+    container_name: mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: admin
+    networks:
+      - my_network
+    profiles:
+      - app
+
+  api_server:
+    image: vladgrz/quotes_manager_api
+    container_name: api_server
+    depends_on:
+      - mongodb
+    environment:
+      - MONGODB_URL=mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/
+    ports:
+      - "8000:8000"
+    networks:
+      - my_network
+    profiles:
+      - app
+
+  web_server:
+    image: vladgrz/quotes_manager_web
+    container_name: web_server
+    ports:
+      - "80:5000"
+    networks:
+      - my_network
+    profiles:
+      - app
+
+  prometheus:
+    image: prom/prometheus:v2.34.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - '9090:9090'
+    networks:
+      - my_network
+    profiles:
+      - monitoring
+
+  mongodb_exporter:
+    image: percona/mongodb_exporter:0.40.0
+    container_name: mongodb-exporter
+    ports:
+      - "9216:9216"
+    networks:
+      - my_network
+    command: --mongodb.uri=mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/admin --collect-all --discovering-mode
+    profiles:
+      - app
+  
+  node_exporter:
+    image: prom/node-exporter
+    container_name: node_exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - my_network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - my_network
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    profiles:
+      - monitoring
+
+networks:
+  my_network:
+    driver: bridge

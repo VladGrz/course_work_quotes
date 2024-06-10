@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<h1>Quotes Manager</h1>
+<a href="{{ url_for('add_quote') }}">
+    <button>Add New Quote</button>
+</a>
+<form method="POST" action="{{ url_for('delete_quotes') }}">
+    <div id="quotes-container">
+        <h2>All Quotes</h2>
+        <div class="actions-row">
+            <div>
+                <input type="checkbox" id="check-all"> Check All
+            </div>
+            <div>
+                <button type="submit">Delete Selected</button>
+            </div>
+        </div>
+        <div id="quotes-list">
+            {% for quote in quotes %}
+            <div class="quote">
+                <input type="checkbox" class="quote-checkbox" name="quote_ids" value="{{ quote.id }}">
+                <div>
+                    <p>{{ quote.text }}</p>
+                    <p class="author">- {{ quote.author }}</p>
+                </div>
+                <a href="{{ url_for('delete_quote', quote_id=quote.id) }}">Delete</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</form>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const checkAllBox = document.getElementById('check-all');
+        const quoteCheckboxes = document.querySelectorAll('.quote-checkbox');
+
+        checkAllBox.addEventListener('change', () => {
+            quoteCheckboxes.forEach(checkbox => {
+                checkbox.checked = checkAllBox.checked;
+            });
+        });
+    });
+</script>
+{% endblock %}

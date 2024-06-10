@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+
+    environment {
+        API_IMAGE = 'vladgrz/quotes_manager_api'
+        API_REPOSITORY = 'quotes_manager_api'
+        WEB_IMAGE = 'vladgrz/quotes_manager_web'
+        WEB_REPOSITORY = 'quotes_manager_web'
+        DB_IMAGE = 'vladgrz/quotes_manager_db'
+        DB_REPOSITORY = 'quotes_manager_db'
+        DOCKER_TAG = 'latest'
+    }
+
+    stages {
+        stage('Build MongoDB') {
+            steps {
+                sh "docker build -t $DB_REPOSITORY:$DOCKER_TAG ./mongodb"
+                sh "docker tag $DB_REPOSITORY $DB_IMAGE:$DOCKER_TAG"
+                sh "docker tag $DB_REPOSITORY $DB_IMAGE:$BUILD_NUMBER"
+            }
+        }
+        stage('Build Api') {
+            steps {
+                sh "docker build -t $API_REPOSITORY:$DOCKER_TAG ./quotes_api"
+                sh "docker tag $API_REPOSITORY $API_IMAGE:$DOCKER_TAG"
+                sh "docker tag $API_REPOSITORY $API_IMAGE:$BUILD_NUMBER"
+            }
+        }
+        stage('Build Web') {
+            steps {
+                sh "docker build -t $WEB_REPOSITORY:$DOCKER_TAG ./app"
+                sh "docker tag $WEB_REPOSITORY $WEB_IMAGE:$DOCKER_TAG"
+                sh "docker tag $WEB_REPOSITORY $WEB_IMAGE:$BUILD_NUMBER"
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withDockerRegistry([credentialsId: "dockerhub_credentials_id", url: "" ]) {
+                    sh "docker push $API_IMAGE:$DOCKER_TAG"
+                    sh "docker push $API_IMAGE:$BUILD_NUMBER"
+                    sh "docker push $WEB_IMAGE:$DOCKER_TAG"
+                    sh "docker push $WEB_IMAGE:$BUILD_NUMBER"
+                    sh "docker push $DB_IMAGE:$DOCKER_TAG"
+                    sh "docker push $DB_IMAGE:$BUILD_NUMBER"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh 'docker compose --profile app down'
+                withCredentials([usernamePassword(credentialsId: 'hcp_vault_credentials_id', passwordVariable: 'HCP_CLIENT_SECRET', usernameVariable: 'HCP_CLIENT_ID')]) {
+                    sh '''
+                    HCP_API_TOKEN=$(curl --location "https://auth.idp.hashicorp.com/oauth2/token" \
+--header "Content-Type: application/x-www-form-urlencoded" \
+--data-urlencode "client_id=$HCP_CLIENT_ID" \
+--data-urlencode "client_secret=$HCP_CLIENT_SECRET" \
+--data-urlencode "grant_type=client_credentials" \
+--data-urlencode "audience=https://api.hashicorp.cloud" | jq -r .access_token)
+                '''
+                    sh "vlt login"
+                    sh 'vlt config --organization "vlad-hrz-org" --project "quotes_secrets" --app-name "quotes"'
+                    sh 'vlt run "docker compose -p quotes --profile app up -d"'
+                }
+            }
+        }
+        stage('Run Tests') {
+            steps {
+                sh '''
+                ls
+                ls $(pwd)
+                ls $(pwd)/tests
+                    docker run --rm --network quotes_my_network -v $(pwd)/tests:/tests -w /tests python:3.10.12 bash -c "ls && pip3 install requests && python3 -m unittest test_quotes.TestApiMethods"
+                    '''
+            }
+        }
+    }
+
+    post {
+        success {
+            slackSend(channel: '#labs', color: 'good', message: "Pipeline succeeded: ${env.JOB_NAME} ${env.BUILD_NUMBER}")
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            slackSend(channel: '#labs', color: 'danger', message: "Pipeline failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}")
+            echo 'Pipeline failed!'
+        }
+    }
+}

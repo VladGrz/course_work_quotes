@@ -1,0 +1,23 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Start basic tools') {
+            steps {
+                sh 'docker compose --profile monitoring down -v'
+                sh 'docker compose -p quotes --profile monitoring up -d --build --force-recreate'
+            }
+        }
+    }
+
+    post {
+        success {
+            slackSend(channel: '#labs', color: 'good', message: "Pipeline succeeded: ${env.JOB_NAME} ${env.BUILD_NUMBER}")
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            slackSend(channel: '#labs', color: 'danger', message: "Pipeline failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}")
+            echo 'Pipeline failed!'
+        }
+    }
+}
